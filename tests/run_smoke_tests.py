@@ -17,6 +17,7 @@ Flags:
     --llm       Gemini destination routing (uses GEMINI_API_KEY)
     --summarise Gemini tab summarisation (uses GEMINI_API_KEY)
     --wikivoyage Wikivoyage MediaWiki fetcher (live, no key)
+    --wikivoyage-summary Wikivoyage fetch → Gemini see-tab summary (GEMINI_API_KEY)
     --output    Report file path (default: tests/reports/smoke_report.txt)
 
 Not intended for Streamlit Cloud — avoids burning API credits on deploy.
@@ -43,6 +44,7 @@ _SMOKE_MODULES = {
     "llm": "tests.smoke_llm",
     "summarise": "tests.smoke_summarise",
     "wikivoyage": "tests.smoke_wikivoyage",
+    "wikivoyage_summary": "tests.smoke_wikivoyage_summary",
 }
 
 # --all runs these; flights is always opt-in separately (Selenium, slow, needs Chrome).
@@ -80,6 +82,8 @@ def _resolve_tests(args: argparse.Namespace) -> list[str]:
         selected.add("summarise")
     if args.wikivoyage:
         selected.add("wikivoyage")
+    if args.wikivoyage_summary:
+        selected.add("wikivoyage_summary")
 
     if not selected:
         return []
@@ -115,6 +119,11 @@ def main() -> int:
     parser.add_argument("--llm", action="store_true", help="Gemini destination routing")
     parser.add_argument("--summarise", action="store_true", help="Gemini tab summarisation")
     parser.add_argument("--wikivoyage", action="store_true", help="Wikivoyage MediaWiki fetcher")
+    parser.add_argument(
+        "--wikivoyage-summary",
+        action="store_true",
+        help="Wikivoyage fetch → Gemini see-tab summary pipeline",
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_REPORT, help="Report output path")
     args = parser.parse_args()
 
@@ -122,7 +131,8 @@ def main() -> int:
     if not to_run:
         parser.error(
             "pass at least one test flag "
-            "(--weather, --places, --llm, --summarise, --wikivoyage, --flights) or --all"
+            "(--weather, --places, --llm, --summarise, --wikivoyage, "
+            "--wikivoyage-summary, --flights) or --all"
         )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")

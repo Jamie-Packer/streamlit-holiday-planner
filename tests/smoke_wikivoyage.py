@@ -11,23 +11,25 @@ from tests._fixtures import WIKIVOYAGE_NEEDLE, WIKIVOYAGE_PAGE, WIKIVOYAGE_SECTI
 
 
 def run() -> None:
-    html = fetch_section(WIKIVOYAGE_PAGE, WIKIVOYAGE_SECTION)
+    text = fetch_section(WIKIVOYAGE_PAGE, WIKIVOYAGE_SECTION)
 
-    assert isinstance(html, str), "fetch_section must return a str"
-    assert html.strip(), "fetch_section must return non-empty content"
-    assert html != SECTION_UNAVAILABLE, (
-        "expected real Wikivoyage HTML, got placeholder — "
+    assert isinstance(text, str), "fetch_section must return a str"
+    assert text.strip(), "fetch_section must return non-empty content"
+    assert text != SECTION_UNAVAILABLE, (
+        "expected real Wikivoyage content, got placeholder — "
         "check network or that the test destination still has the section"
     )
 
-    lower = html.lower()
-    assert "<" in html, "expected HTML markup in the response"
+    lower = text.lower()
+    assert "<" not in text, "expected plain text, not HTML markup"
     assert WIKIVOYAGE_NEEDLE.lower() in lower, (
         f"expected {WIKIVOYAGE_NEEDLE!r} in the Paris See section; "
-        f"got: {html[:200]!r}..."
+        f"got: {text[:200]!r}..."
     )
+    assert len(text) > 500, f"plain text too short ({len(text)} chars) — strip may be too aggressive"
 
     print(f"Page: {WIKIVOYAGE_PAGE!r}  Section: {WIKIVOYAGE_SECTION!r}")
-    print(f"HTML length: {len(html)} chars")
+    print(f"Text length: {len(text)} chars")
     print("--- First 400 chars ---")
-    print(html[:400])
+    # ASCII-safe preview for Windows consoles that can't print wiki punctuation (e.g. ′).
+    print(text[:400].encode("ascii", errors="replace").decode("ascii"))
