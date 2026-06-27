@@ -8,3 +8,5 @@ requests-cache
 retry-requests
 selenium
 undetected-chromedriver
+google-genai
+pydantic

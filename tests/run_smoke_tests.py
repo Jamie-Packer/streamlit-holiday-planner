@@ -7,6 +7,7 @@ Usage (from any directory):
 Flags:
     --no-keys   Weather only (skip Geoapify)
     --flights   Also run Selenium Momondo scrape (slow, needs Chrome)
+    --llm       Also run Gemini destination routing (uses GEMINI_API_KEY)
     --output    Report file path (default: tests/reports/smoke_report.txt)
 
 Not intended for Streamlit Cloud — avoids burning API credits on deploy.
@@ -30,6 +31,7 @@ _SMOKE_MODULES = {
     "weather": "tests.smoke_weather",
     "places": "tests.smoke_places",
     "flights": "tests.smoke_flights",
+    "llm": "tests.smoke_llm",
 }
 
 
@@ -51,6 +53,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run fetcher smoke tests locally.")
     parser.add_argument("--no-keys", action="store_true", help="Skip Geoapify (weather only)")
     parser.add_argument("--flights", action="store_true", help="Include Selenium flight scrape")
+    parser.add_argument("--llm", action="store_true", help="Include Gemini destination routing")
     parser.add_argument("--output", type=Path, default=DEFAULT_REPORT, help="Report output path")
     args = parser.parse_args()
 
@@ -66,6 +69,11 @@ def main() -> int:
         to_run.append("flights")
     else:
         skipped.append("flights")
+
+    if args.llm:
+        to_run.append("llm")
+    else:
+        skipped.append("llm")
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     lines = [
