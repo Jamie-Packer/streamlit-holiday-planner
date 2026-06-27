@@ -9,7 +9,7 @@ Usage (from any directory):
 Pass at least one test flag (or --all). Nothing runs by default.
 
 Flags:
-    --all       Run weather, places, llm, summarise, wikivoyage (not flights)
+    --all       Run weather, places, llm, summarise, wikivoyage, scraper (not flights)
     --no-keys   With --all, skip places (Geoapify needs GEOAPIFY_API_KEY)
     --weather   Open-Meteo forecast + climate (no key)
     --places    Geoapify nearby venues (uses GEOAPIFY_API_KEY)
@@ -18,6 +18,8 @@ Flags:
     --summarise Gemini tab summarisation (uses GEMINI_API_KEY)
     --wikivoyage Wikivoyage MediaWiki fetcher (live, no key)
     --wikivoyage-summary Wikivoyage fetch → Gemini see-tab summary (GEMINI_API_KEY)
+    --scraper   FCDO GOV.UK travel advice scraper (live, no key)
+    --fcdo-summary FCDO scrape → Gemini safety-tab summary (GEMINI_API_KEY)
     --output    Report file path (default: tests/reports/smoke_report.txt)
 
 Not intended for Streamlit Cloud — avoids burning API credits on deploy.
@@ -45,10 +47,12 @@ _SMOKE_MODULES = {
     "summarise": "tests.smoke_summarise",
     "wikivoyage": "tests.smoke_wikivoyage",
     "wikivoyage_summary": "tests.smoke_wikivoyage_summary",
+    "scraper": "tests.smoke_scraper",
+    "fcdo_summary": "tests.smoke_fcdo_summary",
 }
 
 # --all runs these; flights is always opt-in separately (Selenium, slow, needs Chrome).
-_ALL_TESTS = ("weather", "places", "llm", "summarise", "wikivoyage")
+_ALL_TESTS = ("weather", "places", "llm", "summarise", "wikivoyage", "scraper")
 
 
 def _load_module(name: str):
@@ -84,6 +88,10 @@ def _resolve_tests(args: argparse.Namespace) -> list[str]:
         selected.add("wikivoyage")
     if args.wikivoyage_summary:
         selected.add("wikivoyage_summary")
+    if args.scraper:
+        selected.add("scraper")
+    if args.fcdo_summary:
+        selected.add("fcdo_summary")
 
     if not selected:
         return []
@@ -102,7 +110,7 @@ def main() -> int:
     parser.add_argument(
         "--all",
         action="store_true",
-        help="Run weather, places, llm, summarise, wikivoyage (not flights)",
+        help="Run weather, places, llm, summarise, wikivoyage, scraper (not flights)",
     )
     parser.add_argument(
         "--no-keys",
@@ -124,6 +132,12 @@ def main() -> int:
         action="store_true",
         help="Wikivoyage fetch → Gemini see-tab summary pipeline",
     )
+    parser.add_argument("--scraper", action="store_true", help="FCDO GOV.UK travel advice scraper")
+    parser.add_argument(
+        "--fcdo-summary",
+        action="store_true",
+        help="FCDO scrape → Gemini safety-tab summary pipeline",
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_REPORT, help="Report output path")
     args = parser.parse_args()
 
@@ -132,7 +146,7 @@ def main() -> int:
         parser.error(
             "pass at least one test flag "
             "(--weather, --places, --llm, --summarise, --wikivoyage, "
-            "--wikivoyage-summary, --flights) or --all"
+            "--wikivoyage-summary, --scraper, --fcdo-summary, --flights) or --all"
         )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")

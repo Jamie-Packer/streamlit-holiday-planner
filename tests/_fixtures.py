@@ -15,6 +15,17 @@ WIKIVOYAGE_SECTION = "See"
 # assertion that real Wikivoyage content came back rather than the placeholder.
 WIKIVOYAGE_NEEDLE = "Eiffel"
 
+# FCDO smoke test target — Palau is a small, stable GOV.UK page unlikely to
+# change structure, and not the kind of destination likely to be edited mid-demo.
+FCDO_SLUG = "palau"
+# Word we expect somewhere on Palau's GOV.UK travel advice page — grounds the
+# assertion that real scraped content came back rather than the placeholder.
+FCDO_NEEDLE = "Palau"
+
+# FCDO pipeline smoke (scrape → summarise): France has rich safety content.
+FCDO_SUMMARY_SLUG = "france"
+FCDO_SAFETY_GROUNDING_KEYWORDS = ("terror", "demonstr", "industrial")
+
 SUMMARISE_TAB_TYPE = "see"
 
 KRAKOW_SEE_RAW = """\
