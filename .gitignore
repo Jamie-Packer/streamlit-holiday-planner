@@ -3,6 +3,11 @@
 .env
 .env.*
 
+# Smoke test reports and weather request cache
+tests/reports/*.txt
+.cache/
+.cache.sqlite
+
 # Python
 __pycache__/
 *.py[cod]

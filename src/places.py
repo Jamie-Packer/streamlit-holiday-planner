@@ -1,66 +1,68 @@
-""" Geoapify venue fetching """
+"""Geoapify venue fetching for the dashboard map tab.
 
-# libraries
+Fetches nearby restaurants, pubs, and cafés around a destination's lat/lng
+using the Geoapify Places API. The API key is passed in from the UI layer
+(`st.secrets["GEOAPIFY_API_KEY"]`) — never read at module import time, so the
+module stays testable outside a Streamlit runtime (per the architecture rule:
+no Streamlit imports in `src/`).
+"""
+
+from __future__ import annotations
+
+import logging
+
 import requests
-import streamlit as st
 
-# free API from Geoapify
-API_KEY = st.secrets["GEOAPIFY_API_KEY"]   # this is located in secrets folder
+logger = logging.getLogger(__name__)
 
-def fetch_venues(lat: float, lng: float) -> list[dict]:
-    """Fetch nearby restaurants, pubs and cafes
+_URL = "https://api.geoapify.com/v2/places"
+_TIMEOUT = 10  # seconds
+
+
+def fetch_venues(lat: float, lng: float, api_key: str) -> list[dict]:
+    """Fetch nearby restaurants, pubs, and cafés from Geoapify.
 
     Args:
-    lat: Latitude of the destination
-    lng: Longitude of the destination
+        lat: Latitude of the destination.
+        lng: Longitude of the destination.
+        api_key: Geoapify API key (passed in from `st.secrets` by the caller).
 
-    Returns a list of dictionaries with each element in the format:
-    {'name': 'string',
-    'category': 'restaurant, pub or cafe',    # may be unknown by default if it cannot find a caegory
-    'lat': float, 
-    'lng': float}
+    Returns:
+        List of venue dicts, each with keys:
+        {"name": str, "category": str, "lat": float, "lng": float}.
+        Returns an empty list on any network/API error — never raises.
     """
-    
-    # url
-    url = "https://api.geoapify.com/v2/places"
-    # parameters
     params = {
-    "categories":
-        "catering.restaurant,"
-        "catering.pub,"
-        "catering.cafe",
-
-    "filter": f"circle:{lng},{lat},500",   # radius of 500m
-    "limit": 20,   # limit to 20 for display map, can be altered
-    "apiKey": API_KEY
+        "categories": "catering.restaurant,catering.pub,catering.cafe",
+        "filter": f"circle:{lng},{lat},500",  # 500m radius
+        "limit": 20,
+        "apiKey": api_key,
     }
 
-    # call for info, and check 200 code for connection
-    response = requests.get(url, params=params)
-    #print(response.status_code)
-    data = response.json()
+    try:
+        response = requests.get(_URL, params=params, timeout=_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+    except Exception as exc:
+        logger.warning("Geoapify fetch_venues failed for (%s, %s): %s", lat, lng, exc)
+        return []
 
-    # build venue list
-    
-    venues = []
+    venues: list[dict] = []
+    for place in data.get("features", []):
+        properties = place.get("properties", {})
 
-    for place in data["features"]:
-        properties = place["properties"]
-        
-        # extract the venue type
         categories = properties.get("categories", [])
         venue_type = "Unknown"
-        
         for category in categories:
             if category.startswith("catering."):
                 venue_type = category.replace("catering.", "")
                 break
-        # add venue to list
+
         venues.append({
             "name": properties.get("name", "Unknown"),
             "category": venue_type,
-            "lat": properties["lat"],
-            "lng": properties["lon"]
+            "lat": properties.get("lat"),
+            "lng": properties.get("lon"),
         })
 
     return venues

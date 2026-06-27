@@ -1,18 +1,42 @@
-"""DuckDB connection, schema, and all read/write functions."""
+"""DuckDB connection, schema, and all read/write functions.
+
+This module is the single point of contact between the Streamlit frontend
+(`pages/`, `Home.py`) and the data layer. Fetching happens in `src/` modules;
+this module owns the cache, JSON serialisation, and the `get_or_fetch_*`
+orchestrator pattern:
+
+    cache hit  → return cached row
+    cache miss → fetch via src/ module → save_* → return get_* (round-trip)
+
+Round-tripping through the DB guarantees the UI always reads the same shape
+whether the data was cached or freshly fetched, and validates JSON
+serialisation on the very first fetch rather than at display time.
+"""
 
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 import duckdb
+import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "planner.db"
 CSV_PATH = Path(__file__).resolve().parent.parent / "data" / "destinations.csv"
 
 WIKIVOYAGE_SECTIONS = frozenset({"See", "Do", "Drink"})
 SUMMARY_TAB_TYPES = frozenset({"see", "do", "drink", "safety"})
+
+# Map summary tab_type → Wikivoyage section title (case-sensitive in the API).
+_TAB_TO_WIKIVOYAGE_SECTION = {
+    "see": "See",
+    "do": "Do",
+    "drink": "Drink",
+}
 
 
 def get_connection() -> duckdb.DuckDBPyConnection:
@@ -28,13 +52,14 @@ def init_db() -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS destinations (
-                id       INTEGER PRIMARY KEY,
-                name     VARCHAR,
-                country  VARCHAR,
-                region   VARCHAR,
-                lat      DOUBLE,
-                lng      DOUBLE,
-                tags     VARCHAR
+                id              INTEGER PRIMARY KEY,
+                name            VARCHAR,
+                country         VARCHAR,
+                region          VARCHAR,
+                lat             DOUBLE,
+                lng             DOUBLE,
+                tags            VARCHAR,
+                gov_uk_country  VARCHAR
             )
             """
         )
@@ -106,13 +131,44 @@ def _row_to_dict(row: tuple, columns: list[str]) -> dict:
     return dict(zip(columns, row))
 
 
+def _json_default(obj):
+    """JSON fallback for numpy/pandas scalars that aren't native Python types."""
+    if isinstance(obj, (pd.Timestamp,)):
+        return obj.isoformat()
+    if hasattr(obj, "item"):  # numpy scalar → native Python
+        return obj.item()
+    if hasattr(obj, "tolist"):  # numpy array
+        return obj.tolist()
+    try:
+        if pd.isna(obj):  # NaN / NaT
+            return None
+    except (TypeError, ValueError):
+        pass
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serialisable")
+
+
+def _df_to_records(df) -> list[dict]:
+    """Convert a pandas DataFrame to a JSON-safe list of dict records.
+
+    Datetime columns are stringified to ISO date strings; numpy scalars are
+    coerced to native Python via `_json_default` at dump time.
+    """
+    if df is None or getattr(df, "empty", True):
+        return []
+    out = df.copy()
+    for col in out.columns:
+        if pd.api.types.is_datetime64_any_dtype(out[col]):
+            out[col] = out[col].dt.strftime("%Y-%m-%d")
+    return out.to_dict(orient="records")
+
+
 def get_destination(destination_id: int) -> dict | None:
     """Return a single destination row or None if not found."""
     conn = get_connection()
     try:
         row = conn.execute(
             """
-            SELECT id, name, country, region, lat, lng, tags
+            SELECT id, name, country, region, lat, lng, tags, gov_uk_country
             FROM destinations
             WHERE id = ?
             """,
@@ -120,7 +176,10 @@ def get_destination(destination_id: int) -> dict | None:
         ).fetchone()
         if row is None:
             return None
-        return _row_to_dict(row, ["id", "name", "country", "region", "lat", "lng", "tags"])
+        return _row_to_dict(
+            row,
+            ["id", "name", "country", "region", "lat", "lng", "tags", "gov_uk_country"],
+        )
     finally:
         conn.close()
 
@@ -131,12 +190,12 @@ def get_all_destinations() -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT id, name, country, region, lat, lng, tags
+            SELECT id, name, country, region, lat, lng, tags, gov_uk_country
             FROM destinations
             ORDER BY id
             """
         ).fetchall()
-        columns = ["id", "name", "country", "region", "lat", "lng", "tags"]
+        columns = ["id", "name", "country", "region", "lat", "lng", "tags", "gov_uk_country"]
         return [_row_to_dict(row, columns) for row in rows]
     finally:
         conn.close()
@@ -176,8 +235,8 @@ def save_weather(destination_id: int, forecast: dict, climate: dict) -> None:
             [
                 destination_id,
                 datetime.now(timezone.utc),
-                json.dumps(forecast),
-                json.dumps(climate),
+                json.dumps(forecast, default=_json_default),
+                json.dumps(climate, default=_json_default),
             ],
         )
     finally:
@@ -330,29 +389,129 @@ def save_summary(destination_id: int, tab_type: str, summary_text: str) -> None:
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Orchestrators — cache miss → fetch → save → return get_* (round-trip)
+# ---------------------------------------------------------------------------
+
+
 def get_or_fetch_weather(destination_id: int) -> dict:
-    """Return cached weather or fetch and save on miss. Implemented in Phase 2."""
-    raise NotImplementedError
+    """Return cached weather or fetch and save on miss.
+
+    `fetch_forecast` returns a dict with a pandas DataFrame under `daily`;
+    `fetch_climate` returns a DataFrame. Both are normalised to JSON-safe
+    records before being persisted via `save_weather`. The returned shape
+    matches `get_weather`: `{"forecast": {...}, "climate": [...]}`.
+    """
+    cached = get_weather(destination_id)
+    if cached is not None:
+        return cached
+
+    dest = get_destination(destination_id)
+    if dest is None:
+        raise ValueError(f"destination_id {destination_id} not found")
+
+    # Imported here so the module loads even if openmeteo isn't installed
+    # (e.g. quick DB inspection in a minimal env).
+    from src.weather import fetch_climate, fetch_forecast
+
+    forecast_raw = fetch_forecast(dest["lat"], dest["lng"])
+    climate_df = fetch_climate(dest["lat"], dest["lng"])
+
+    forecast = {
+        "latitude": forecast_raw.get("latitude"),
+        "longitude": forecast_raw.get("longitude"),
+        "current": forecast_raw.get("current", {}),
+        "daily": _df_to_records(forecast_raw.get("daily")),
+    }
+    climate = _df_to_records(climate_df)
+
+    save_weather(destination_id, forecast, climate)
+    return get_weather(destination_id)
 
 
 def get_or_fetch_places(destination_id: int, api_key: str) -> list:
-    """Return cached venues or fetch and save on miss. Implemented in Phase 2."""
-    raise NotImplementedError
+    """Return cached venues or fetch and save on miss."""
+    cached = get_places(destination_id)
+    if cached is not None:
+        return cached
+
+    dest = get_destination(destination_id)
+    if dest is None:
+        raise ValueError(f"destination_id {destination_id} not found")
+
+    from src.places import fetch_venues
+
+    venues = fetch_venues(dest["lat"], dest["lng"], api_key)
+    save_places(destination_id, venues)
+    return get_places(destination_id)
 
 
 def get_or_fetch_wikivoyage(destination_id: int, section: str) -> str:
-    """Return cached Wikivoyage section or fetch and save on miss. Implemented in Phase 2."""
-    raise NotImplementedError
+    """Return cached Wikivoyage section or fetch and save on miss."""
+    if section not in WIKIVOYAGE_SECTIONS:
+        raise ValueError(f"section must be one of {sorted(WIKIVOYAGE_SECTIONS)}")
+
+    cached = get_wikivoyage(destination_id, section)
+    if cached is not None:
+        return cached
+
+    dest = get_destination(destination_id)
+    if dest is None:
+        raise ValueError(f"destination_id {destination_id} not found")
+
+    from src.wikivoyage import fetch_section
+
+    raw_text = fetch_section(dest["name"], section)
+    save_wikivoyage(destination_id, section, raw_text)
+    return get_wikivoyage(destination_id, section)
 
 
 def get_or_fetch_fcdo(destination_id: int) -> dict:
-    """Return cached FCDO advice or fetch and save on miss. Implemented in Phase 2."""
-    raise NotImplementedError
+    """Return cached FCDO advice or fetch and save on miss."""
+    cached = get_fcdo(destination_id)
+    if cached is not None:
+        return cached
+
+    dest = get_destination(destination_id)
+    if dest is None:
+        raise ValueError(f"destination_id {destination_id} not found")
+
+    from src.scraper import fetch_fcdo_advice
+
+    advice = fetch_fcdo_advice(dest.get("gov_uk_country") or "")
+    save_fcdo(destination_id, advice.get("safety_text", ""), advice.get("entry_text", ""))
+    return get_fcdo(destination_id)
 
 
 def get_or_fetch_summary(destination_id: int, tab_type: str, api_key: str) -> str:
-    """Return cached tab summary or generate and save on miss. Implemented in Phase 2."""
-    raise NotImplementedError
+    """Return cached tab summary or generate and save on miss.
+
+    For see/do/drink: pulls raw text via `get_or_fetch_wikivoyage` (which
+    caches the section), then `summarise_tab`. For safety: pulls raw text via
+    `get_or_fetch_fcdo` (caches the scrape), then `summarise_tab`. The raw
+    text and the summary are both cached in DuckDB, so a repeat visit costs
+    zero API/LLM calls.
+    """
+    tab = tab_type.lower().strip()
+    if tab not in SUMMARY_TAB_TYPES:
+        raise ValueError(f"tab_type must be one of {sorted(SUMMARY_TAB_TYPES)}")
+
+    cached = get_summary(destination_id, tab)
+    if cached is not None:
+        return cached
+
+    from src.llm import summarise_tab
+
+    if tab in _TAB_TO_WIKIVOYAGE_SECTION:
+        section = _TAB_TO_WIKIVOYAGE_SECTION[tab]
+        raw_text = get_or_fetch_wikivoyage(destination_id, section)
+    else:  # safety
+        fcdo = get_or_fetch_fcdo(destination_id)
+        raw_text = fcdo.get("safety_text", "")
+
+    summary = summarise_tab(raw_text, tab, api_key)
+    save_summary(destination_id, tab, summary)
+    return get_summary(destination_id, tab)
 
 
 if __name__ == "__main__":
