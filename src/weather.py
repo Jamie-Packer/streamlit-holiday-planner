@@ -1,15 +1,11 @@
 """Open-Meteo weather and climate fetching."""
 
 from __future__ import annotations   # helps type hints
-import openmeteo_requests   # talks to the Open-Meteo API
-import pandas as pd   # dataframes
-import requests_cache   # saves recent API calls
-from retry_requests import retry   # retries if the API request fails
+import openmeteo_requests
+import pandas as pd
+import requests
 
-# create client
-cache_session = requests_cache.CachedSession(".cache", expire_after=3600)   # saves a cache for 3600s (= 1 hour)
-retry_session = retry(cache_session, retries=5, backoff_factor=0.2)    # retries up t0 5 times
-openmeteo = openmeteo_requests.Client(session=retry_session)
+openmeteo = openmeteo_requests.Client(session=requests.Session())
 
 # --- fetch_forecast function ---
 

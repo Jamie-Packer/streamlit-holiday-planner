@@ -20,6 +20,7 @@ Flags:
     --wikivoyage-summary Wikivoyage fetch → Gemini see-tab summary (GEMINI_API_KEY)
     --scraper   FCDO GOV.UK travel advice scraper (live, no key)
     --fcdo-summary FCDO scrape → Gemini safety-tab summary (GEMINI_API_KEY)
+    --orchestrators All database.py get_or_fetch_* helpers for dest id 123 (GEOAPIFY + GEMINI)
     --output    Report file path (default: tests/reports/smoke_report.txt)
 
 Not intended for Streamlit Cloud — avoids burning API credits on deploy.
@@ -49,6 +50,7 @@ _SMOKE_MODULES = {
     "wikivoyage_summary": "tests.smoke_wikivoyage_summary",
     "scraper": "tests.smoke_scraper",
     "fcdo_summary": "tests.smoke_fcdo_summary",
+    "orchestrators": "tests.smoke_orchestrators",
 }
 
 # --all runs these; flights is always opt-in separately (Selenium, slow, needs Chrome).
@@ -92,6 +94,8 @@ def _resolve_tests(args: argparse.Namespace) -> list[str]:
         selected.add("scraper")
     if args.fcdo_summary:
         selected.add("fcdo_summary")
+    if args.orchestrators:
+        selected.add("orchestrators")
 
     if not selected:
         return []
@@ -138,6 +142,11 @@ def main() -> int:
         action="store_true",
         help="FCDO scrape → Gemini safety-tab summary pipeline",
     )
+    parser.add_argument(
+        "--orchestrators",
+        action="store_true",
+        help="All database.py get_or_fetch_* helpers (dest 123; GEOAPIFY + GEMINI keys)",
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_REPORT, help="Report output path")
     args = parser.parse_args()
 
@@ -146,7 +155,7 @@ def main() -> int:
         parser.error(
             "pass at least one test flag "
             "(--weather, --places, --llm, --summarise, --wikivoyage, "
-            "--wikivoyage-summary, --scraper, --fcdo-summary, --flights) or --all"
+            "--wikivoyage-summary, --scraper, --fcdo-summary, --orchestrators, --flights) or --all"
         )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")

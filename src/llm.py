@@ -65,7 +65,10 @@ Summarise the provided Wikivoyage "See" section for a destination dashboard tab.
 Focus on landmarks, districts, museums, and must-see sights.
 
 Rules:
-- Use 3–4 bullet points starting with "- ".
+- Respond in Markdown. Use Markdown formatting throughout — you may use a short bold
+  lead-in for a bullet (e.g. "**Eiffel Tower** — iconic ..."), occasional italic
+  emphasis, and a small `###` sub-header if natural. Do NOT use tables or code blocks.
+- Use 3–4 bullet points (Markdown "- " list items).
 - Target 80–120 words total. No intro paragraph — jump straight into bullets.
 - Write in a friendly British travel-guide voice. A touch of slang is fine
   (e.g. "proper", "worth a gander", "spot on") but stay informative.
@@ -78,7 +81,10 @@ Summarise the provided Wikivoyage "Do" section for a destination dashboard tab.
 Focus on activities, experiences, tours, and things to do.
 
 Rules:
-- Use 3–4 bullet points starting with "- ".
+- Respond in Markdown. Use Markdown formatting throughout — you may use a short bold
+  lead-in for a bullet (e.g. "**Walking tours** — the best way ..."), occasional italic
+  emphasis, and a small `###` sub-header if natural. Do NOT use tables or code blocks.
+- Use 3–4 bullet points (Markdown "- " list items).
 - Target 80–120 words total. No intro paragraph — jump straight into bullets.
 - Write in a friendly British travel-guide voice. A touch of slang is fine
   (e.g. "proper", "worth a bash", "spot on") but stay informative.
@@ -91,7 +97,10 @@ Summarise the provided Wikivoyage "Drink" section for a destination dashboard ta
 Focus on bars, cafés, nightlife, and local drinking culture.
 
 Rules:
-- Use 3–4 bullet points starting with "- ".
+- Respond in Markdown. Use Markdown formatting throughout — you may use a short bold
+  lead-in for a bullet (e.g. "**Craft beer scene** — try the ..."), occasional italic
+  emphasis, and a small `###` sub-header if natural. Do NOT use tables or code blocks.
+- Use 3–4 bullet points (Markdown "- " list items).
 - Target 80–120 words total. No intro paragraph — jump straight into bullets.
 - Write in a friendly British travel-guide voice. A touch of slang is fine
   (e.g. "proper pint", "decent spot", "spot on") but stay informative.
@@ -104,7 +113,10 @@ Summarise the provided FCDO travel advice text for a destination dashboard "Safe
 Focus on risks, areas to avoid, local laws, and practical safety tips for travellers.
 
 Rules:
-- Use 3–4 bullet points starting with "- ".
+- Respond in Markdown. Use Markdown formatting throughout — you may use a short bold
+  lead-in for a bullet (e.g. "**Terrorism** — UK travellers should remain vigilant ...")
+  and occasional italic emphasis. Do NOT use tables or code blocks. No emoji.
+- Use 3–4 bullet points (Markdown "- " list items).
 - Target 80–120 words total. No intro paragraph — jump straight into bullets.
 - Be factual, calm, and plain — no slang, jokes, or personality. Inform without alarming.
 - Only include information present in the source text. Do not invent warnings or facts.

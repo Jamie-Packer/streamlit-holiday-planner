@@ -35,7 +35,7 @@ def run() -> None:
     destinations = _routing_destinations()
     valid_ids = {int(r["id"]) for r in destinations}
 
-    assert len(valid_ids) == 100, f"expected 100 destinations, got {len(valid_ids)}"
+    assert len(valid_ids) == 300, f"expected 300 destinations, got {len(valid_ids)}"
 
     result = route_destinations(LLM_PROMPT, destinations, api_key)
 
