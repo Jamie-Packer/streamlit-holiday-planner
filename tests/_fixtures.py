@@ -9,6 +9,12 @@ FLIGHT_DATE = "20/07/2026"
 
 LLM_PROMPT = "I want a warm beach holiday with good nightlife and seafood."
 
+WIKIVOYAGE_PAGE = "Paris"
+WIKIVOYAGE_SECTION = "See"
+# Landmark we expect to appear in the Paris "See" section HTML — grounds the
+# assertion that real Wikivoyage content came back rather than the placeholder.
+WIKIVOYAGE_NEEDLE = "Eiffel"
+
 SUMMARISE_TAB_TYPE = "see"
 
 KRAKOW_SEE_RAW = """\

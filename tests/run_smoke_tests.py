@@ -1,14 +1,22 @@
 """Run local smoke tests for implemented fetch modules.
 
 Usage (from any directory):
-    python tests/run_smoke_tests.py
-    python -m tests.run_smoke_tests
+    python tests/run_smoke_tests.py --wikivoyage
+    python tests/run_smoke_tests.py --weather --places
+    python tests/run_smoke_tests.py --all
+    python -m tests.run_smoke_tests --all --no-keys
+
+Pass at least one test flag (or --all). Nothing runs by default.
 
 Flags:
-    --no-keys   Weather only (skip Geoapify)
-    --flights   Also run Selenium Momondo scrape (slow, needs Chrome)
-    --llm       Also run Gemini destination routing (uses GEMINI_API_KEY)
-    --summarise Also run Gemini tab summarisation (uses GEMINI_API_KEY)
+    --all       Run weather, places, llm, summarise, wikivoyage (not flights)
+    --no-keys   With --all, skip places (Geoapify needs GEOAPIFY_API_KEY)
+    --weather   Open-Meteo forecast + climate (no key)
+    --places    Geoapify nearby venues (uses GEOAPIFY_API_KEY)
+    --flights   Selenium Momondo scrape (slow, needs Chrome) — never included in --all
+    --llm       Gemini destination routing (uses GEMINI_API_KEY)
+    --summarise Gemini tab summarisation (uses GEMINI_API_KEY)
+    --wikivoyage Wikivoyage MediaWiki fetcher (live, no key)
     --output    Report file path (default: tests/reports/smoke_report.txt)
 
 Not intended for Streamlit Cloud — avoids burning API credits on deploy.
@@ -34,7 +42,11 @@ _SMOKE_MODULES = {
     "flights": "tests.smoke_flights",
     "llm": "tests.smoke_llm",
     "summarise": "tests.smoke_summarise",
+    "wikivoyage": "tests.smoke_wikivoyage",
 }
+
+# --all runs these; flights is always opt-in separately (Selenium, slow, needs Chrome).
+_ALL_TESTS = ("weather", "places", "llm", "summarise", "wikivoyage")
 
 
 def _load_module(name: str):
@@ -51,43 +63,75 @@ def _run_module(name: str, mod) -> tuple[str, str | None]:
         return name, str(exc)
 
 
+def _resolve_tests(args: argparse.Namespace) -> list[str]:
+    """Build ordered, de-duplicated list of tests to run from CLI flags."""
+    selected: set[str] = set()
+    if args.all:
+        selected.update(_ALL_TESTS)
+    if args.weather:
+        selected.add("weather")
+    if args.places:
+        selected.add("places")
+    if args.flights:
+        selected.add("flights")
+    if args.llm:
+        selected.add("llm")
+    if args.summarise:
+        selected.add("summarise")
+    if args.wikivoyage:
+        selected.add("wikivoyage")
+
+    if not selected:
+        return []
+
+    if args.no_keys:
+        selected.discard("places")
+
+    # Preserve stable run order regardless of flag order on the CLI.
+    return [name for name in _SMOKE_MODULES if name in selected]
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run fetcher smoke tests locally.")
-    parser.add_argument("--no-keys", action="store_true", help="Skip Geoapify (weather only)")
-    parser.add_argument("--flights", action="store_true", help="Include Selenium flight scrape")
-    parser.add_argument("--llm", action="store_true", help="Include Gemini destination routing")
-    parser.add_argument("--summarise", action="store_true", help="Include Gemini tab summarisation")
+    parser = argparse.ArgumentParser(
+        description="Run fetcher smoke tests locally (opt-in — pass at least one flag).",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Run weather, places, llm, summarise, wikivoyage (not flights)",
+    )
+    parser.add_argument(
+        "--no-keys",
+        action="store_true",
+        help="With --all, skip places (Geoapify)",
+    )
+    parser.add_argument("--weather", action="store_true", help="Open-Meteo weather fetchers")
+    parser.add_argument("--places", action="store_true", help="Geoapify nearby venues")
+    parser.add_argument(
+        "--flights",
+        action="store_true",
+        help="Selenium Momondo scrape (slow, needs Chrome; not part of --all)",
+    )
+    parser.add_argument("--llm", action="store_true", help="Gemini destination routing")
+    parser.add_argument("--summarise", action="store_true", help="Gemini tab summarisation")
+    parser.add_argument("--wikivoyage", action="store_true", help="Wikivoyage MediaWiki fetcher")
     parser.add_argument("--output", type=Path, default=DEFAULT_REPORT, help="Report output path")
     args = parser.parse_args()
 
-    to_run: list[str] = ["weather"]
-    skipped: list[str] = []
-
-    if args.no_keys:
-        skipped.append("places")
-    else:
-        to_run.append("places")
-
-    if args.flights:
-        to_run.append("flights")
-    else:
-        skipped.append("flights")
-
-    if args.llm:
-        to_run.append("llm")
-    else:
-        skipped.append("llm")
-
-    if args.summarise:
-        to_run.append("summarise")
-    else:
-        skipped.append("summarise")
+    to_run = _resolve_tests(args)
+    if not to_run:
+        parser.error(
+            "pass at least one test flag "
+            "(--weather, --places, --llm, --summarise, --wikivoyage, --flights) or --all"
+        )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     lines = [
         f"Smoke tests — {timestamp}",
         "========================================",
     ]
+    if args.all and args.no_keys:
+        lines.append("Note: places skipped (--no-keys)")
 
     passed = 0
     failed = 0
@@ -106,11 +150,8 @@ def main() -> int:
             lines.append(f"{name:<10} FAIL — {err}")
             failed += 1
 
-    for name in skipped:
-        lines.append(f"{name:<10} SKIPPED")
-
     lines.append("========================================")
-    lines.append(f"{passed} passed, {failed} failed, {len(skipped)} skipped")
+    lines.append(f"{passed} passed, {failed} failed, {len(to_run)} run")
 
     report = "\n".join(lines)
     print(report)
