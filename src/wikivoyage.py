@@ -3,12 +3,12 @@
 Two-step flow per fetch:
   1. search: resolve `destinations.name` to the best Wikivoyage article title
      (handles minor spelling/variant mismatches in our CSV).
-  2. parse: fetch the requested section's HTML for that title.
+  2. parse: fetch the requested section's HTML for that title, then strip to
+     plain text before returning so the LLM receives a compact, token-efficient
+     payload rather than raw wiki markup.
 
-Returned HTML is passed straight to `summarise_tab` — no BeautifulSoup stripping;
-Gemini handles markup and section-sized payloads are small. Results are cached in
-the DuckDB `wikivoyage` table by `database.py` orchestrators, so repeat dashboard
-visits cost zero API calls.
+Results are cached in the DuckDB `wikivoyage` table by `database.py`
+orchestrators, so repeat dashboard visits cost zero API calls.
 
 Wikivoyage is a separate wiki from Wikipedia; hardcoding the API URL below
 guarantees we never pull Wikipedia content.
@@ -17,8 +17,10 @@ guarantees we never pull Wikipedia content.
 from __future__ import annotations
 
 import logging
+import re
 
 import requests
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,25 @@ def _fetch_section_html(title: str, section_index: int) -> str:
     return html or ""
 
 
+def _html_to_text(html: str) -> str:
+    """Strip wiki HTML to clean plain text for LLM consumption.
+
+    Removes edit links, coordinate spans, and collapses whitespace so the
+    result is compact and token-efficient without losing descriptive content.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Drop edit links and coordinate/map elements — pure wiki chrome.
+    for tag in soup.find_all(class_=re.compile(r"mw-editsection|geo|coordinates|noprint")):
+        tag.decompose()
+
+    text = soup.get_text(separator="\n")
+
+    # Collapse runs of blank lines and strip leading/trailing whitespace.
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text
+
+
 def fetch_section(page_title: str, section: str) -> str:
     """Fetch HTML for a Wikivoyage article section.
 
@@ -120,7 +141,7 @@ def fetch_section(page_title: str, section: str) -> str:
         section: One of "See", "Do", or "Drink".
 
     Returns:
-        Section HTML as a string, ready to pass to `summarise_tab`. Returns a
+        Section content as plain text, ready to pass to `summarise_tab`. Returns a
         shared placeholder constant if the article or section is missing, or if
         any network/API error occurs — never raises.
     """
@@ -144,7 +165,7 @@ def fetch_section(page_title: str, section: str) -> str:
         if not html or not html.strip():
             logger.info("Wikivoyage section %r on %r came back empty", section, title)
             return SECTION_UNAVAILABLE
-        return html
+        return _html_to_text(html)
     except Exception as exc:
         logger.warning("Wikivoyage fetch_section failed for %r/%r: %s",
                        page_title, section, exc)
