@@ -26,7 +26,7 @@ class _DestinationChoice(BaseModel):
     )
 
 
-_SYSTEM_PROMPT = """\
+_ROUTING_SYSTEM_PROMPT = """\
 You are a holiday destination router for the Holiday Planner app.
 
 You will be given:
@@ -50,6 +50,66 @@ Selection rules:
 - The 3 chosen IDs must be distinct.
 - Only use IDs that appear in the catalogue. Never invent destinations.
 """
+
+_VALID_TAB_TYPES = frozenset({"see", "do", "drink", "safety"})
+
+_SUMMARY_UNAVAILABLE = "Summary unavailable — please try again later."
+
+_SUMMARY_EMPTY = "No content available for this section yet."
+
+_SUMMARY_PROMPTS: dict[str, str] = {
+    "see": """\
+You are a travel editor for the Holiday Planner app — warm, slightly quirky, British.
+
+Summarise the provided Wikivoyage "See" section for a destination dashboard tab.
+Focus on landmarks, districts, museums, and must-see sights.
+
+Rules:
+- Use 3–4 bullet points starting with "- ".
+- Target 80–120 words total. No intro paragraph — jump straight into bullets.
+- Write in a friendly British travel-guide voice. A touch of slang is fine
+  (e.g. "proper", "worth a gander", "spot on") but stay informative.
+- Only include information present in the source text. Do not invent places or facts.
+""",
+    "do": """\
+You are a travel editor for the Holiday Planner app — warm, slightly quirky, British.
+
+Summarise the provided Wikivoyage "Do" section for a destination dashboard tab.
+Focus on activities, experiences, tours, and things to do.
+
+Rules:
+- Use 3–4 bullet points starting with "- ".
+- Target 80–120 words total. No intro paragraph — jump straight into bullets.
+- Write in a friendly British travel-guide voice. A touch of slang is fine
+  (e.g. "proper", "worth a bash", "spot on") but stay informative.
+- Only include information present in the source text. Do not invent activities or facts.
+""",
+    "drink": """\
+You are a travel editor for the Holiday Planner app — warm, slightly quirky, British.
+
+Summarise the provided Wikivoyage "Drink" section for a destination dashboard tab.
+Focus on bars, cafés, nightlife, and local drinking culture.
+
+Rules:
+- Use 3–4 bullet points starting with "- ".
+- Target 80–120 words total. No intro paragraph — jump straight into bullets.
+- Write in a friendly British travel-guide voice. A touch of slang is fine
+  (e.g. "proper pint", "decent spot", "spot on") but stay informative.
+- Only include information present in the source text. Do not invent venues or facts.
+""",
+    "safety": """\
+You are a travel editor for the Holiday Planner app.
+
+Summarise the provided FCDO travel advice text for a destination dashboard "Safety" tab.
+Focus on risks, areas to avoid, local laws, and practical safety tips for travellers.
+
+Rules:
+- Use 3–4 bullet points starting with "- ".
+- Target 80–120 words total. No intro paragraph — jump straight into bullets.
+- Be factual, calm, and plain — no slang, jokes, or personality. Inform without alarming.
+- Only include information present in the source text. Do not invent warnings or facts.
+""",
+}
 
 
 def _build_catalogue_csv(destinations: list[dict]) -> str:
@@ -102,7 +162,7 @@ def route_destinations(prompt: str, destinations: list[dict], api_key: str) -> l
             model=_MODEL,
             contents=user_content,
             config={
-                "system_instruction": _SYSTEM_PROMPT,
+                "system_instruction": _ROUTING_SYSTEM_PROMPT,
                 "response_mime_type": "application/json",
                 "response_json_schema": _DestinationChoice.model_json_schema(),
                 "temperature": 0.2,
@@ -157,4 +217,30 @@ def summarise_tab(raw_text: str, tab_type: str, api_key: str) -> str:
     Returns:
         Concise summary string for display in the tab panel.
     """
-    raise NotImplementedError
+    tab = tab_type.lower().strip()
+    if tab not in _VALID_TAB_TYPES:
+        raise ValueError(
+            f"tab_type must be one of {sorted(_VALID_TAB_TYPES)!r}, got {tab_type!r}"
+        )
+
+    if not raw_text or not raw_text.strip():
+        return _SUMMARY_EMPTY
+
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=_MODEL,
+            contents=raw_text.strip(),
+            config={
+                "system_instruction": _SUMMARY_PROMPTS[tab],
+                "temperature": 0.3,
+            },
+        )
+        summary = (response.text or "").strip()
+        if not summary:
+            logger.warning("Gemini summarise_tab returned empty text for tab %r", tab)
+            return _SUMMARY_UNAVAILABLE
+        return summary
+    except Exception as exc:
+        logger.warning("Gemini summarise_tab failed for tab %r: %s", tab, exc)
+        return _SUMMARY_UNAVAILABLE
