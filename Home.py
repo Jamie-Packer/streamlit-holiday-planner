@@ -31,6 +31,23 @@ ss.setdefault("search_prompt", "")
 ss.setdefault("selected_destination_id", None)
 ss.setdefault("active_tab", "see")
 
+# Deep-link support: a ?dest=<id> query param (e.g. shared/bookmarked link)
+# routes straight into the dashboard. Normal in-app navigation from the search
+# cards uses st.button + st.rerun() (see views/search_view.py), which preserves
+# suggestion_ids; this param path is only for cold arrivals.
+dest_param = st.query_params.get("dest")
+if dest_param:
+    try:
+        ss["selected_destination_id"] = int(dest_param)
+        ss["view"] = "dashboard"
+        ss["active_tab"] = "see"
+    except (ValueError, TypeError):
+        pass
+    try:
+        st.query_params.pop("dest")
+    except (KeyError, TypeError):
+        pass
+
 if ss["view"] == "dashboard" and ss["selected_destination_id"] is not None:
     dashboard_view.render()
 else:
