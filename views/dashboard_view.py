@@ -62,6 +62,29 @@ def _load_places(destination_id: int, _api_key: str) -> list | None:
         return {"error": str(exc)}
 
 
+_VENUE_TABS: list[tuple[str, str]] = [
+    ("cafes", "☕ Cafes"),
+    ("bars", "🍻 Bars"),
+    ("attractions", "🎡 Attractions"),
+    ("nightclub", "🕺 Nightclub"),
+]
+
+_VENUE_SPINNERS = {
+    "cafes": "Searching for nearby cafes…",
+    "bars": "Finding local bars…",
+    "attractions": "Discovering popular attractions…",
+    "nightclub": "Scouting nightclubs…",
+}
+
+
+@st.cache_data(show_spinner=False)
+def _load_google_places(destination_id: int, venue_type: str, _api_key: str) -> list | None:
+    try:
+        return db.get_or_fetch_google_places(destination_id, venue_type, _api_key)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
 @st.cache_data(show_spinner=False)
 def _load_summary(destination_id: int, tab: str, _api_key: str) -> str:
     return db.get_or_fetch_summary(destination_id, tab, _api_key)
@@ -148,31 +171,60 @@ def _weather_section(destination_id: int) -> None:
 def _venues_section(destination_id: int) -> None:
     st.markdown('<div class="hp-section-title">Eat, drink &amp; explore nearby</div>', unsafe_allow_html=True)
 
-    api_key = st.secrets.get("GEOAPIFY_API_KEY")
+    api_key = st.secrets.get("GOOGLE_PLACES_API_KEY")
     if not api_key:
-        st.info("Add a `GEOAPIFY_API_KEY` to view the venue map.")
+        st.info("Add a `GOOGLE_PLACES_API_KEY` to view the venue map.")
         return
 
-    with st.spinner("Scouting local venues…"):
-        venues = _load_places(destination_id, api_key)
+    ss = st.session_state
+    active_venue = ss.get("active_venue_tab", "cafes")
+
+    # Venue tab selector — a row of pill buttons. Only the active tab's content is
+    # rendered below, so non-active tabs never trigger an API/LLM call.
+    cols = st.columns(len(_VENUE_TABS))
+    for col, (tab_key, label) in zip(cols, _VENUE_TABS):
+        with col:
+            if st.button(
+                label,
+                key=f"venue_tab_{tab_key}",
+                type="primary" if tab_key == active_venue else "secondary",
+                use_container_width=True,
+            ):
+                if tab_key != active_venue:
+                    ss["active_venue_tab"] = tab_key
+                    st.rerun()
+
+    with st.spinner(_VENUE_SPINNERS.get(active_venue, "Scouting local spots…")):
+        venues = _load_google_places(destination_id, active_venue, api_key)
 
     if isinstance(venues, dict) and "error" in venues:
         st.info("Venue data isn't available right now.")
         return
     if not venues:
-        st.info("No nearby venues found for this spot.")
+        st.info("No nearby venues found for this category.")
         return
 
     df = pd.DataFrame(venues)
     coords = df.dropna(subset=["lat", "lng"]).rename(columns={"lng": "lon"})
+    
     if not coords.empty:
         st.map(coords[["lat", "lon"]], use_container_width=True)
 
-    if "category" in df.columns:
-        counts = df["category"].value_counts()
-        cols = st.columns(len(counts) or 1)
-        for col, (category, n) in zip(cols, counts.items()):
-            col.metric(str(category).title(), int(n))
+    st.write("")
+    st.caption(f"Explore popular {active_venue} in this area:")
+
+    # Render venue details in a clean card layout
+    cols_per_row = 3
+    for i in range(0, len(venues), cols_per_row):
+        row_venues = venues[i : i + cols_per_row]
+        cols = st.columns(len(row_venues))
+        for col, venue in zip(cols, row_venues):
+            with col:
+                with st.container(border=True):
+                    st.markdown(f"**{venue['name']}**")
+                    st.caption(venue['address'])
+                    if venue.get("google_maps_uri"):
+                        st.markdown(f"[Open on Google Maps ↗]({venue['google_maps_uri']})")
 
 
 def _summaries_section(destination_id: int) -> None:
@@ -261,5 +313,5 @@ def render() -> None:
     _top_bar(dest_id)
     _hero(dest)
     _weather_section(dest_id)
-    _venues_section(dest_id)
     _summaries_section(dest_id)
+    _venues_section(dest_id)
