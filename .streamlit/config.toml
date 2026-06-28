@@ -1,0 +1,15 @@
+[client]
+# Single-page-app feel: no auto page nav in the sidebar. Users move between
+# the search and dashboard views via on-screen buttons only.
+showSidebarNavigation = false
+toolbarMode = "minimal"
+
+[theme]
+# Warm, modern, editorial palette. base="light" keeps the custom white cards
+# and gradients consistent (custom CSS in theme.py assumes a light surface).
+base = "light"
+primaryColor = "#C2683A"
+backgroundColor = "#FBF8F3"
+secondaryBackgroundColor = "#F2ECE2"
+textColor = "#2B2622"
+font = "serif"
