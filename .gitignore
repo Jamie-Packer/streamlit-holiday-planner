@@ -23,3 +23,7 @@ env/
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# DuckDB temp files
+data/*.wal
+data/*.db-journal

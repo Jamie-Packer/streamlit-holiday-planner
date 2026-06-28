@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,17 +40,48 @@ _TAB_TO_WIKIVOYAGE_SECTION = {
     "drink": "Drink",
 }
 
+# A single, process-wide read/write connection to the embedded DuckDB file.
+#
+# Why singleton + lock instead of open/close per call:
+# - On Windows, DuckDB takes an exclusive OS file lock when a read-write
+#   connection opens, and releasing it on close() is not instantaneous. Rapid
+#   open/close cycles (every get_*/save_* call) race with each other and with
+#   overlapping Streamlit script-run threads, producing "process cannot access
+#   the file because it is being used by another process".
+# - Opening the file exactly once eliminates that race. DuckDB connections are
+#   not thread-safe, so all access is serialised under `_DB_LOCK`.
+_connection: duckdb.DuckDBPyConnection | None = None
+_DB_LOCK = threading.Lock()
+
 
 def get_connection() -> duckdb.DuckDBPyConnection:
-    """Return a connection to the embedded DuckDB database."""
-    return duckdb.connect(str(DB_PATH))
+    """Return the process-wide DuckDB connection, creating it on first use.
+
+    The connection is intentionally kept open for the life of the process —
+    callers must NOT close it. Use the ``_cursor()`` context manager for
+    serialised access; it yields the shared connection while holding the lock.
+    """
+    global _connection
+    if _connection is not None:
+        return _connection
+    with _DB_LOCK:
+        if _connection is None:
+            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _connection = duckdb.connect(str(DB_PATH))
+    return _connection
+
+
+@contextmanager
+def _cursor():
+    """Serialise access to the shared connection across threads."""
+    conn = get_connection()
+    with _DB_LOCK:
+        yield conn
 
 
 def init_db() -> None:
     """Create tables if missing and seed destinations from CSV when empty."""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS destinations (
@@ -79,6 +112,17 @@ def init_db() -> None:
                 destination_id  INTEGER PRIMARY KEY,
                 fetched_at      TIMESTAMP,
                 venues_json     VARCHAR
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS google_places (
+                destination_id  INTEGER,
+                venue_type      VARCHAR,
+                fetched_at      TIMESTAMP,
+                venues_json     VARCHAR,
+                PRIMARY KEY (destination_id, venue_type)
             )
             """
         )
@@ -123,8 +167,6 @@ def init_db() -> None:
                 SELECT * FROM read_csv_auto('{CSV_PATH.as_posix()}', header=true)
                 """
             )
-    finally:
-        conn.close()
 
 
 def _row_to_dict(row: tuple, columns: list[str]) -> dict:
@@ -164,8 +206,7 @@ def _df_to_records(df) -> list[dict]:
 
 def get_destination(destination_id: int) -> dict | None:
     """Return a single destination row or None if not found."""
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         row = conn.execute(
             """
             SELECT id, name, country, region, lat, lng, tags, gov_uk_country
@@ -180,14 +221,11 @@ def get_destination(destination_id: int) -> dict | None:
             row,
             ["id", "name", "country", "region", "lat", "lng", "tags", "gov_uk_country"],
         )
-    finally:
-        conn.close()
 
 
 def get_all_destinations() -> list[dict]:
     """Return all destinations for LLM routing."""
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         rows = conn.execute(
             """
             SELECT id, name, country, region, lat, lng, tags, gov_uk_country
@@ -197,14 +235,11 @@ def get_all_destinations() -> list[dict]:
         ).fetchall()
         columns = ["id", "name", "country", "region", "lat", "lng", "tags", "gov_uk_country"]
         return [_row_to_dict(row, columns) for row in rows]
-    finally:
-        conn.close()
 
 
 def get_weather(destination_id: int) -> dict | None:
     """Return cached weather as {"forecast": dict, "climate": dict} or None."""
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         row = conn.execute(
             """
             SELECT forecast_json, climate_json
@@ -219,14 +254,11 @@ def get_weather(destination_id: int) -> dict | None:
             "forecast": json.loads(row[0]),
             "climate": json.loads(row[1]),
         }
-    finally:
-        conn.close()
 
 
 def save_weather(destination_id: int, forecast: dict, climate: dict) -> None:
     """Persist forecast and climate payloads as JSON strings."""
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO weather (destination_id, fetched_at, forecast_json, climate_json)
@@ -239,14 +271,11 @@ def save_weather(destination_id: int, forecast: dict, climate: dict) -> None:
                 json.dumps(climate, default=_json_default),
             ],
         )
-    finally:
-        conn.close()
 
 
 def get_places(destination_id: int) -> list | None:
     """Return cached venue list or None."""
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         row = conn.execute(
             """
             SELECT venues_json
@@ -258,14 +287,11 @@ def get_places(destination_id: int) -> list | None:
         if row is None:
             return None
         return json.loads(row[0])
-    finally:
-        conn.close()
 
 
 def save_places(destination_id: int, venues: list) -> None:
     """Persist venue list as JSON string."""
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO places (destination_id, fetched_at, venues_json)
@@ -273,16 +299,43 @@ def save_places(destination_id: int, venues: list) -> None:
             """,
             [destination_id, datetime.now(timezone.utc), json.dumps(venues)],
         )
-    finally:
-        conn.close()
+
+
+def get_google_places(destination_id: int, venue_type: str) -> list | None:
+    """Return cached Google Place list or None."""
+    venue_type = venue_type.lower().strip()
+    with _cursor() as conn:
+        row = conn.execute(
+            """
+            SELECT venues_json
+            FROM google_places
+            WHERE destination_id = ? AND venue_type = ?
+            """,
+            [destination_id, venue_type],
+        ).fetchone()
+        if row is None:
+            return None
+        return json.loads(row[0])
+
+
+def save_google_places(destination_id: int, venue_type: str, venues: list) -> None:
+    """Persist Google Place list as JSON string."""
+    venue_type = venue_type.lower().strip()
+    with _cursor() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO google_places (destination_id, venue_type, fetched_at, venues_json)
+            VALUES (?, ?, ?, ?)
+            """,
+            [destination_id, venue_type, datetime.now(timezone.utc), json.dumps(venues)],
+        )
 
 
 def get_wikivoyage(destination_id: int, section: str) -> str | None:
     """Return cached Wikivoyage section text or None."""
     if section not in WIKIVOYAGE_SECTIONS:
         raise ValueError(f"section must be one of {sorted(WIKIVOYAGE_SECTIONS)}")
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         row = conn.execute(
             """
             SELECT raw_text
@@ -294,16 +347,13 @@ def get_wikivoyage(destination_id: int, section: str) -> str | None:
         if row is None:
             return None
         return row[0]
-    finally:
-        conn.close()
 
 
 def save_wikivoyage(destination_id: int, section: str, raw_text: str) -> None:
     """Persist Wikivoyage section text."""
     if section not in WIKIVOYAGE_SECTIONS:
         raise ValueError(f"section must be one of {sorted(WIKIVOYAGE_SECTIONS)}")
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO wikivoyage (destination_id, section, fetched_at, raw_text)
@@ -311,14 +361,11 @@ def save_wikivoyage(destination_id: int, section: str, raw_text: str) -> None:
             """,
             [destination_id, section, datetime.now(timezone.utc), raw_text],
         )
-    finally:
-        conn.close()
 
 
 def get_fcdo(destination_id: int) -> dict | None:
     """Return cached FCDO advice as {"safety_text": str, "entry_text": str} or None."""
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         row = conn.execute(
             """
             SELECT safety_text, entry_text
@@ -330,14 +377,11 @@ def get_fcdo(destination_id: int) -> dict | None:
         if row is None:
             return None
         return {"safety_text": row[0], "entry_text": row[1]}
-    finally:
-        conn.close()
 
 
 def save_fcdo(destination_id: int, safety_text: str, entry_text: str) -> None:
     """Persist FCDO safety and entry requirement text."""
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO fcdo (destination_id, fetched_at, safety_text, entry_text)
@@ -345,8 +389,6 @@ def save_fcdo(destination_id: int, safety_text: str, entry_text: str) -> None:
             """,
             [destination_id, datetime.now(timezone.utc), safety_text, entry_text],
         )
-    finally:
-        conn.close()
 
 
 def get_summary(destination_id: int, tab_type: str) -> str | None:
@@ -354,8 +396,7 @@ def get_summary(destination_id: int, tab_type: str) -> str | None:
     tab_type = tab_type.lower()
     if tab_type not in SUMMARY_TAB_TYPES:
         raise ValueError(f"tab_type must be one of {sorted(SUMMARY_TAB_TYPES)}")
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         row = conn.execute(
             """
             SELECT summary_text
@@ -367,8 +408,6 @@ def get_summary(destination_id: int, tab_type: str) -> str | None:
         if row is None:
             return None
         return row[0]
-    finally:
-        conn.close()
 
 
 def save_summary(destination_id: int, tab_type: str, summary_text: str) -> None:
@@ -376,8 +415,7 @@ def save_summary(destination_id: int, tab_type: str, summary_text: str) -> None:
     tab_type = tab_type.lower()
     if tab_type not in SUMMARY_TAB_TYPES:
         raise ValueError(f"tab_type must be one of {sorted(SUMMARY_TAB_TYPES)}")
-    conn = get_connection()
-    try:
+    with _cursor() as conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO summaries (destination_id, tab_type, fetched_at, summary_text)
@@ -385,8 +423,6 @@ def save_summary(destination_id: int, tab_type: str, summary_text: str) -> None:
             """,
             [destination_id, tab_type, datetime.now(timezone.utc), summary_text],
         )
-    finally:
-        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +480,24 @@ def get_or_fetch_places(destination_id: int, api_key: str) -> list:
     venues = fetch_venues(dest["lat"], dest["lng"], api_key)
     save_places(destination_id, venues)
     return get_places(destination_id)
+
+
+def get_or_fetch_google_places(destination_id: int, venue_type: str, api_key: str) -> list:
+    """Return cached Google Places or fetch and save on miss."""
+    venue_type = venue_type.lower().strip()
+    cached = get_google_places(destination_id, venue_type)
+    if cached is not None:
+        return cached
+
+    dest = get_destination(destination_id)
+    if dest is None:
+        raise ValueError(f"destination_id {destination_id} not found")
+
+    from src.google_places import fetch_google_places
+
+    venues = fetch_google_places(dest["lat"], dest["lng"], venue_type, api_key)
+    save_google_places(destination_id, venue_type, venues)
+    return get_google_places(destination_id, venue_type)
 
 
 def get_or_fetch_wikivoyage(destination_id: int, section: str) -> str:
