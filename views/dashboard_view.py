@@ -153,7 +153,7 @@ def _weather_section(destination_id: int) -> None:
                 )
                 .properties(height=220)
             )
-            st.altair_chart(temp_chart, use_container_width=True)
+            st.altair_chart(temp_chart, width="stretch")
         with chart_r:
             st.caption("Total rainfall (mm)")
             rain_chart = (
@@ -165,7 +165,7 @@ def _weather_section(destination_id: int) -> None:
                 )
                 .properties(height=220)
             )
-            st.altair_chart(rain_chart, use_container_width=True)
+            st.altair_chart(rain_chart, width="stretch")
 
 
 def _venues_section(destination_id: int) -> None:
@@ -188,7 +188,7 @@ def _venues_section(destination_id: int) -> None:
                 label,
                 key=f"venue_tab_{tab_key}",
                 type="primary" if tab_key == active_venue else "secondary",
-                use_container_width=True,
+                width="stretch",
             ):
                 if tab_key != active_venue:
                     ss["active_venue_tab"] = tab_key
@@ -208,7 +208,7 @@ def _venues_section(destination_id: int) -> None:
     coords = df.dropna(subset=["lat", "lng"]).rename(columns={"lng": "lon"})
     
     if not coords.empty:
-        st.map(coords[["lat", "lon"]], use_container_width=True)
+        st.map(coords[["lat", "lon"]], width="stretch")
 
     st.write("")
     st.caption(f"Explore popular {active_venue} in this area:")
@@ -242,7 +242,7 @@ def _summaries_section(destination_id: int) -> None:
                 label,
                 key=f"tab_{tab_key}",
                 type="primary" if tab_key == active else "secondary",
-                use_container_width=True,
+                width="stretch",
             ):
                 if tab_key != active:
                     ss["active_tab"] = tab_key
@@ -275,7 +275,7 @@ def _top_bar(dest_id: int) -> None:
     back_col, switch_col = st.columns([1.1, 3])
 
     with back_col:
-        if st.button("← Back to search", use_container_width=True):
+        if st.button("← Back to search", width="stretch"):
             ss["view"] = "search"
             st.rerun()
 
@@ -291,7 +291,7 @@ def _top_bar(dest_id: int) -> None:
                     other["name"],
                     key=f"switch_{i}",
                     type="primary" if int(i) == dest_id else "secondary",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     if int(i) != dest_id:
                         ss["selected_destination_id"] = int(i)

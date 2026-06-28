@@ -5,7 +5,10 @@ import openmeteo_requests
 import pandas as pd
 import requests
 
-openmeteo = openmeteo_requests.Client(session=requests.Session())
+_USER_AGENT = "HolidayPlanner/1.0 (Rockborne training project)"
+_session = requests.Session()
+_session.headers.update({"User-Agent": _USER_AGENT})
+openmeteo = openmeteo_requests.Client(session=_session)
 
 # --- fetch_forecast function ---
 

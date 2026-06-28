@@ -65,7 +65,7 @@ def render() -> None:
                 placeholder="e.g. warm beaches, lively nightlife and great seafood…",
                 label_visibility="collapsed",
             )
-            submitted = st.form_submit_button("Find my destinations", use_container_width=True)
+            submitted = st.form_submit_button("Find my destinations", width="stretch")
 
     if submitted:
         if not prompt.strip():
@@ -91,7 +91,7 @@ def render() -> None:
             if st.button(
                 f"Explore {dest['name']}",
                 key=f"explore_{dest_id}",
-                use_container_width=True,
+                width="stretch",
             ):
                 ss["selected_destination_id"] = int(dest_id)
                 ss["active_tab"] = "see"
