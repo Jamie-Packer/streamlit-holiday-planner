@@ -1,16 +1,42 @@
 # Holiday Planner
 
-Streamlit app: describe an ideal holiday → get three matching destinations → dashboard with weather, venues, travel advice, and tabbed summaries.
+Describe your ideal trip in plain language and get three curated destination recommendations, each with live weather, nearby venues on a map, and AI summaries of what to see, do, drink, and how to stay safe.
 
-## Where we are
+Built with Streamlit. Single-page app: search and dashboard swap in place with no sidebar navigation.
 
-**MVP complete.** The full user flow works locally: Gemini routes prompts to three destinations from the walled-garden CSV, the user picks one, and the dashboard loads weather, a Google Places venue map, and lazy-loaded See / Do / Drink / Safety summaries — all cached in DuckDB.
+## Features
 
-Next steps are refinements (UI polish, deploy, error states) rather than core functionality.
+- **Natural-language search**: Google Gemini reads your prompt and picks three matching destinations from a curated catalogue of 300 cities worldwide.
+- **Destination dashboard**: hero imagery, quick switcher between your three suggestions, and deep links via `?dest=<id>` for sharing.
+- **Weather**: monthly climate chart, seven-day forecast, and today's conditions via Open-Meteo (no API key required).
+- **Venue map**: Google Places nearby search for cafes, bars, attractions, and nightclubs, rendered on an interactive Folium map.
+- **Tabbed guides**: Wikivoyage content and GOV.UK FCDO travel advice, condensed into readable summaries by Gemini:
+  - **See**: sights and landmarks
+  - **Do**: activities and experiences
+  - **Drink**: bars, cafés, and nightlife
+  - **Safety**: official foreign travel advice
+- **Smart caching**: DuckDB stores fetched data so repeat visits are fast and API usage stays low.
 
-## Local setup
+## How it works
 
-From the repo root:
+1. **Search**: enter a prompt (e.g. *"warm beach city with great food and nightlife"*). Gemini returns three geographically diverse matches.
+2. **Choose**: click a destination card to open its dashboard.
+3. **Explore**: browse weather, venues, and summary tabs. Switch between your three suggestions from the top bar, or share a link with `?dest=<id>`.
+
+Recommendations come only from `data/destinations.csv`; the LLM filters and ranks within that list and never invents destinations outside it.
+
+## Data sources
+
+| Source | Used for |
+|--------|----------|
+| Google Gemini | Search routing + tab summaries |
+| Google Places API (New) | Dashboard venue map |
+| Open-Meteo | Weather and climate |
+| Wikivoyage (MediaWiki API) | See / Do / Drink raw content |
+| GOV.UK FCDO | Safety tab (web scrape) |
+| DuckDB | Local cache (`data/planner.db`) |
+
+## Run locally
 
 ```powershell
 conda create -n holiday-planner python=3.11 -y
@@ -19,11 +45,15 @@ pip install -r requirements.txt
 streamlit run Home.py
 ```
 
-`Home.py` calls `init_db()` on startup. The repo includes a pre-seeded `data/planner.db`; run `python src/database.py` only if you need to rebuild the database from `destinations.csv`.
+`Home.py` initialises the database on startup. The repo ships with a pre-seeded `data/planner.db`. To rebuild from scratch:
+
+```powershell
+python src/database.py
+```
 
 ### API keys
 
-Create `.streamlit/secrets.toml` (gitignored) for live features:
+Create `.streamlit/secrets.toml` (gitignored):
 
 ```toml
 GEMINI_API_KEY = "your-key"
@@ -37,20 +67,11 @@ GOOGLE_PLACES_API_KEY = "your-key"
 
 Weather, Wikivoyage, and FCDO travel advice need no keys.
 
-## Smoke tests
+## Deploy
 
-Local opt-in checks for `src/` fetchers — not run on deploy. Pass at least one flag (nothing runs by default):
+The app is designed for [Streamlit Community Cloud](https://streamlit.io/cloud). Connect your GitHub repo, set the same secrets in the Cloud dashboard, and point the entry file to `Home.py`. The committed `data/planner.db` gives the deployed app a warm cache from the first request.
 
-```powershell
-python tests/run_smoke_tests.py --weather --wikivoyage --scraper   # no keys
-python tests/run_smoke_tests.py --llm --summarise                  # GEMINI_API_KEY
-python tests/run_smoke_tests.py --all --no-keys                    # skip Geoapify
-python tests/run_smoke_tests.py --all                              # full suite (needs keys)
-```
-
-Reports are written to `tests/reports/smoke_report.txt`. See `tests/run_smoke_tests.py --help` for individual flags (`--orchestrators`, `--fcdo-summary`, `--flights`, etc.).
-
-## Layout
+## Project layout
 
 ```
 Home.py              → single-page router (search ↔ dashboard)
@@ -62,3 +83,15 @@ data/                → destinations.csv + planner.db
 tests/               → local smoke tests
 pages/3_Dev_Tools.py → cache inspect stub (optional)
 ```
+
+## Development
+
+Opt-in smoke tests exercise individual fetchers and LLM calls locally (not run on deploy):
+
+```powershell
+python tests/run_smoke_tests.py --weather --wikivoyage --scraper   # no keys
+python tests/run_smoke_tests.py --llm --summarise                  # GEMINI_API_KEY
+python tests/run_smoke_tests.py --all                              # full suite (needs keys)
+```
+
+Reports are written to `tests/reports/smoke_report.txt`. See `tests/run_smoke_tests.py --help` for all flags.

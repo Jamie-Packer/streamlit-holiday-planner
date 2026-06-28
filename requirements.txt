@@ -6,3 +6,5 @@ pandas
 openmeteo-requests
 google-genai
 pydantic
+folium
+streamlit-folium

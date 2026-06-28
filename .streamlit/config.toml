@@ -8,7 +8,7 @@ toolbarMode = "minimal"
 # Warm, modern, editorial palette. base="light" keeps the custom white cards
 # and gradients consistent (custom CSS in theme.py assumes a light surface).
 base = "light"
-primaryColor = "#C2683A"
+primaryColor = "#961717"
 backgroundColor = "#FBF8F3"
 secondaryBackgroundColor = "#F2ECE2"
 textColor = "#2B2622"

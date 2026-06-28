@@ -483,10 +483,17 @@ def get_or_fetch_places(destination_id: int, api_key: str) -> list:
 
 
 def get_or_fetch_google_places(destination_id: int, venue_type: str, api_key: str) -> list:
-    """Return cached Google Places or fetch and save on miss."""
+    """Return cached Google Places or fetch and save on miss.
+
+    An empty cached result is treated as a miss, and empty fetches are not
+    saved: ``fetch_google_places`` returns ``[]`` both for a genuinely
+    empty area and for a transient API error (e.g. a 400 from a bad place
+    type). Persisting ``[]`` would permanently hide a category after a
+    single failure, so treating empty as a miss lets the next visit retry.
+    """
     venue_type = venue_type.lower().strip()
     cached = get_google_places(destination_id, venue_type)
-    if cached is not None:
+    if cached:
         return cached
 
     dest = get_destination(destination_id)
@@ -496,8 +503,9 @@ def get_or_fetch_google_places(destination_id: int, venue_type: str, api_key: st
     from src.google_places import fetch_google_places
 
     venues = fetch_google_places(dest["lat"], dest["lng"], venue_type, api_key)
-    save_google_places(destination_id, venue_type, venues)
-    return get_google_places(destination_id, venue_type)
+    if venues:
+        save_google_places(destination_id, venue_type, venues)
+    return venues
 
 
 def get_or_fetch_wikivoyage(destination_id: int, section: str) -> str:

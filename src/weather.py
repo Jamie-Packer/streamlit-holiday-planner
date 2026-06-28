@@ -75,20 +75,21 @@ def fetch_forecast(lat: float, lng: float) -> dict:
 # --- fetch_climate function ---
 
 def fetch_climate(lat: float, lng: float)  -> pd.DataFrame:
-    """Fetch historical monthly climate averages from Open-Meteo.
-    Returns an Open-Meteo climate payload dict with monthly temperature
-    and precipitation series suitable for seasonal charts.
+    """Fetch historical daily climate from Open-Meteo across the last 3 full
+    calendar years and return a DataFrame suitable for seasonal averaging.
 
-    currently returns a dataframe with average temperature and rainfall for every day of 2025
-    
+    Returns a DataFrame with one row per day across the requested span, with
+    ``date``, ``temperature_mean`` and ``precipitation`` columns. The dashboard
+    groups by month and averages, so multiple years are folded together into a
+    single "typical year" profile in one API call.
     """
-    # create url that will request necessary information for weather 
+    # create url that will request necessary information for weather
     url = "https://archive-api.open-meteo.com/v1/archive"
     params = {
         "latitude": lat,   # inputs
         "longitude": lng,   # inputs
-        # full calendar year
-        "start_date": "2025-01-01",   # start of 2025
+        # last 3 full calendar years — averaged downstream by month
+        "start_date": "2023-01-01",   # start of 2023
         "end_date": "2025-12-31",   # through to the end of 2025
         # average temperature and rainfall
         "daily": [

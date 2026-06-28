@@ -29,7 +29,7 @@ _GLOBAL_CSS = """
     --hp-serif-body: 'Source Serif 4', Georgia, serif;
     --hp-ink: #2B2622;
     --hp-muted: rgba(43, 38, 34, 0.62);
-    --hp-accent: #C2683A;
+    --hp-accent: #961717;
     --hp-card-radius: 22px;
 }
 
@@ -98,6 +98,9 @@ h1, h2, h3, h4, h5 {
 .hp-spacer-lg { height: 9vh; }
 
 /* ---- Destination cards (search results) -------------------------------- */
+/* Each result card is a plain visual block; the real click target is the
+   visible "Explore" st.button rendered right below it in the same column
+   (see views/search_view.py). */
 .hp-card {
     border-radius: var(--hp-card-radius);
     overflow: hidden;
@@ -105,6 +108,11 @@ h1, h2, h3, h4, h5 {
     border: 1px solid rgba(43, 38, 34, 0.07);
     box-shadow: 0 10px 30px rgba(43, 38, 34, 0.10);
     animation: hpFadeInUp 0.55s ease both;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.hp-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 18px 38px rgba(43, 38, 34, 0.18);
 }
 .hp-card-img {
     height: 200px;
