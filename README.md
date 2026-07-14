@@ -2,7 +2,11 @@
 
 Describe your ideal trip in plain language and get three curated destination recommendations, each with live weather, nearby venues on a map, and AI summaries of what to see, do, drink, and how to stay safe.
 
-Built with Streamlit. Single-page app: search and dashboard swap in place with no sidebar navigation.
+View the live deployment here!
+
+✨[https://super-epic-holiday-inspo-app.streamlit.app/](url)✨
+
+> Note: The map feature will likely stop working when the google API key is disabled some day.
 
 ## Features
 
