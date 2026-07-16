@@ -33,6 +33,16 @@ CSV_PATH = Path(__file__).resolve().parent.parent / "data" / "destinations.csv"
 WIKIVOYAGE_SECTIONS = frozenset({"See", "Do", "Drink"})
 SUMMARY_TAB_TYPES = frozenset({"see", "do", "drink", "safety"})
 
+# Cached payload tables only — never touch the destinations hub.
+SPOKE_TABLES = (
+    "weather",
+    "places",
+    "google_places",
+    "wikivoyage",
+    "fcdo",
+    "summaries",
+)
+
 # Map summary tab_type → Wikivoyage section title (case-sensitive in the API).
 _TAB_TO_WIKIVOYAGE_SECTION = {
     "see": "See",
@@ -167,6 +177,35 @@ def init_db() -> None:
                 SELECT * FROM read_csv_auto('{CSV_PATH.as_posix()}', header=true)
                 """
             )
+
+
+def purge_spoke_caches() -> dict[str, int]:
+    """Delete all cached spoke rows; leave ``destinations`` intact.
+
+    Returns ``{table_name: rows_removed}``. Intended for pre-commit / deploy
+    hygiene so Community Cloud cold-starts with an empty cache (fresh weather
+    forecasts, etc.) rather than stale local-dev rows baked into
+    ``data/planner.db``.
+    """
+    cleared: dict[str, int] = {}
+    with _cursor() as conn:
+        for table in SPOKE_TABLES:
+            count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            conn.execute(f"DELETE FROM {table}")
+            cleared[table] = int(count)
+        # Flush WAL into the main file so a subsequent git commit of
+        # planner.db actually contains the empty spoke tables.
+        conn.execute("CHECKPOINT")
+    return cleared
+
+
+def spoke_cache_counts() -> dict[str, int]:
+    """Return current row counts for each spoke table (dev / Dev Tools)."""
+    with _cursor() as conn:
+        return {
+            table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            for table in SPOKE_TABLES
+        }
 
 
 def _row_to_dict(row: tuple, columns: list[str]) -> dict:
@@ -577,5 +616,16 @@ def get_or_fetch_summary(destination_id: int, tab_type: str, api_key: str) -> st
 
 
 if __name__ == "__main__":
+    import sys
+
     init_db()
-    print(f"Seeded {len(get_all_destinations())} destinations")
+    if "--purge" in sys.argv:
+        before = spoke_cache_counts()
+        cleared = purge_spoke_caches()
+        after = spoke_cache_counts()
+        print("Purged spoke caches (destinations untouched):")
+        for table in SPOKE_TABLES:
+            print(f"  {table}: {before[table]} → {after[table]} (removed {cleared[table]})")
+        print(f"Destinations still loaded: {len(get_all_destinations())}")
+    else:
+        print(f"Seeded {len(get_all_destinations())} destinations")
