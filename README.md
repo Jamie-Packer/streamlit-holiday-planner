@@ -4,7 +4,7 @@ Describe your ideal trip in plain language and get three curated destination rec
 
 View the live deployment here!
 
-✨[https://super-epic-holiday-inspo-app.streamlit.app/](url)✨
+✨[https://super-epic-holiday-inspo-app.streamlit.app/](https://super-epic-holiday-inspo-app.streamlit.app/)✨
 
 > Note: The map feature will likely stop working when the google API key is disabled some day.
 
