@@ -376,7 +376,8 @@ def _render_venue_map(dest: dict, venues: list, venue_type: str) -> None:
         zoom_start=14,
         scrollWheelZoom=True,
         zoom_control=True,
-        tiles="CartoDB positron",
+        # CARTO Positron watermarks every tile unless a key is set.
+        tiles="OpenStreetMap",
         control_scale=True,
     )
 
