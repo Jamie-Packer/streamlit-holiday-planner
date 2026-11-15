@@ -468,7 +468,7 @@ def _venues_section(destination_id: int) -> None:
         return
 
     st.caption(
-        f"{len(venues)} places found — hover a pin to see its name, "
+        f"{len(venues)} places found, hover a pin to see its name, "
         "click it for the type, address and a Google Maps link."
     )
 
@@ -488,7 +488,7 @@ def _venues_section(destination_id: int) -> None:
 
 def _summaries_section(destination_id: int) -> None:
     ss = st.session_state
-    st.markdown('<div class="hp-section-title">The lowdown</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hp-section-title">At a glance</div>', unsafe_allow_html=True)
 
     active = ss.get("active_tab", "see")
 
@@ -526,7 +526,7 @@ def _summaries_section(destination_id: int) -> None:
         with st.expander("Details"):
             st.exception(error)
     else:
-        st.info("This summary isn't available right now — try another tab.")
+        st.info("This summary isn't available right now, try another tab.")
 
 
 def _top_bar(dest_id: int) -> None:
